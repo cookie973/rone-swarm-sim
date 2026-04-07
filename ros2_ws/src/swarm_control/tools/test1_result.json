@@ -1,0 +1,49 @@
+{
+  "test_name": "测试1",
+  "timestamp": "2026-04-07 22:51:53",
+  "formation_sequence": [
+    "line_x",
+    "line_y",
+    "v_shape",
+    "t_shape"
+  ],
+  "metrics": {
+    "total_reconfig_time_s": 41.45159411430359,
+    "min_inter_uav_distance_m": 3.3559994241671194,
+    "avg_command_response_latency_s": 0.083426833152771,
+    "total_invalid_displacement_m": 23.29225958925965,
+    "collision_rate_percent": 0.0
+  },
+  "per_command": [
+    {
+      "formation": "line_x",
+      "response_latency_s": 0.0,
+      "duration_s": 0.0,
+      "invalid_displacement_m": 0.0,
+      "note": "no_op_same_formation"
+    },
+    {
+      "formation": "line_y",
+      "response_latency_s": 0.0004944801330566406,
+      "duration_s": 14.072051048278809,
+      "invalid_displacement_m": 4.090495132281946
+    },
+    {
+      "formation": "v_shape",
+      "response_latency_s": 0.1662149429321289,
+      "duration_s": 13.49956727027893,
+      "invalid_displacement_m": 8.080036514993985
+    },
+    {
+      "formation": "t_shape",
+      "response_latency_s": 0.16699790954589844,
+      "duration_s": 13.665918588638306,
+      "invalid_displacement_m": 11.121727941983721
+    }
+  ],
+  "collision_threshold_m": 1.0,
+  "samples": {
+    "collision_samples": 0,
+    "total_distance_samples": 9314
+  }
+}

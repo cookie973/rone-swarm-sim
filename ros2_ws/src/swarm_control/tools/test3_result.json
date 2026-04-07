@@ -1,0 +1,80 @@
+{
+  "test_name": "测试3_高频连续干预机制对比",
+  "timestamp": "2026-04-08 01:25:10",
+  "config": {
+    "frequencies_hz": [
+      2.0,
+      5.0,
+      10.0
+    ],
+    "intervention_duration_s": 18.0,
+    "deadlock_timeout_s": 6.0,
+    "random_seed": 20260408,
+    "intervention_types": [
+      "formation",
+      "mission_center"
+    ]
+  },
+  "results": [
+    {
+      "mechanism": "snapshot_replan",
+      "frequency_hz": 2.0,
+      "command_count": 36,
+      "avg_command_response_latency_s": 0.16640159663032084,
+      "avg_single_command_invalid_displacement_m": 0.07962990519395616,
+      "state_deadlock_rate_percent": 0.0,
+      "responded_count": 34,
+      "deadlock_count": 0
+    },
+    {
+      "mechanism": "return_origin_replan",
+      "frequency_hz": 2.0,
+      "command_count": 36,
+      "avg_command_response_latency_s": 0.1622923215230306,
+      "avg_single_command_invalid_displacement_m": 0.09459672289911379,
+      "state_deadlock_rate_percent": 0.0,
+      "responded_count": 36,
+      "deadlock_count": 0
+    },
+    {
+      "mechanism": "snapshot_replan",
+      "frequency_hz": 5.0,
+      "command_count": 90,
+      "avg_command_response_latency_s": 0.09489784961523012,
+      "avg_single_command_invalid_displacement_m": 0.013885117895431407,
+      "state_deadlock_rate_percent": 0.0,
+      "responded_count": 86,
+      "deadlock_count": 0
+    },
+    {
+      "mechanism": "return_origin_replan",
+      "frequency_hz": 5.0,
+      "command_count": 90,
+      "avg_command_response_latency_s": 0.09518424763399012,
+      "avg_single_command_invalid_displacement_m": 0.04509376887202345,
+      "state_deadlock_rate_percent": 0.0,
+      "responded_count": 85,
+      "deadlock_count": 0
+    },
+    {
+      "mechanism": "snapshot_replan",
+      "frequency_hz": 10.0,
+      "command_count": 180,
+      "avg_command_response_latency_s": 0.052148735201036606,
+      "avg_single_command_invalid_displacement_m": 0.001981256977972354,
+      "state_deadlock_rate_percent": 0.0,
+      "responded_count": 74,
+      "deadlock_count": 0
+    },
+    {
+      "mechanism": "return_origin_replan",
+      "frequency_hz": 10.0,
+      "command_count": 181,
+      "avg_command_response_latency_s": 0.05576399722731257,
+      "avg_single_command_invalid_displacement_m": 0.031618106731416434,
+      "state_deadlock_rate_percent": 0.0,
+      "responded_count": 83,
+      "deadlock_count": 0
+    }
+  ]
+}

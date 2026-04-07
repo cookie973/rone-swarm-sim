@@ -1,0 +1,44 @@
+# ========================================
+# swarm_params.yaml — 蜂群全局参数
+# ========================================
+# 使用 /** 通配，所有 drone_controller 节点共享这些参数。
+# 每个节点的 drone_id 由 launch 文件单独覆盖。
+
+/**:
+  ros__parameters:
+    num_drones: 6
+    ns_prefix: "uav"
+    comm_radius: 20.0          # 通信半径 (m)
+    control_rate: 10.0         # 控制频率 (Hz)
+    max_speed: 1.0             # 最大飞行速度 (m/s)（降低防过冲）
+    max_force: 2.0             # 最大转向力 (m/s²)
+    target_altitude: 5.0       # 目标巡航高度 (m)
+    alt_kp: 1.0                # 高度保持 P 增益
+
+    boid:
+      separation_dist: 3.0     # 分离作用距离 (m)
+      cohesion_dist: 15.0      # 聚合作用距离 (m)
+      alignment_dist: 10.0     # 对齐作用距离 (m)
+      w_separation: 1.0        # 分离力权重（降低，避障模块也有斥力）
+      w_cohesion: 0.0          # 聚合力权重（队形模式下置零，由 formation 接管）
+      w_alignment: 0.0         # 对齐力权重（队形模式下置零）
+
+    communication:
+      delay_ms: 0              # 通信延迟 (ms)，实验3可调
+      drop_rate: 0.0           # 丢包率 [0,1)，实验3可调
+      stale_threshold: 0.5     # 信息过期阈值 (s)
+
+    formation:
+      default: "diamond"       # 默认队形 (diamond/v_shape/line/circle)
+      kp: 0.8                  # 队形位置误差 P 增益（保守值，防超调）
+      kd: 2.0                  # 速度阻尼 D 增益（过阻尼，消除振荡）
+      w_formation: 1.0         # 队形力权重
+
+    obstacle_avoidance:
+      safe_distance: 2.0       # 障碍物最小安全距离 (m)
+      influence_distance: 8.0  # 障碍物斥力影响范围 (m)
+      repulsion_gain: 5.0      # 障碍物斥力增益
+      drone_safe_distance: 2.5 # 无人机间安全距离 (m)
+      drone_influence_distance: 6.0  # 无人机间斥力影响范围 (m)
+      drone_repulsion_gain: 4.0 # 无人机间斥力增益
+      w_avoidance: 1.0         # 避障力整体权重

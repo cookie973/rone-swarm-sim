@@ -1,0 +1,49 @@
+{
+  "test_name": "测试2",
+  "timestamp": "2026-04-07 23:51:18",
+  "scenario": {
+    "initial_formation": "line_x",
+    "north_cruise_speed_mps": 5.0,
+    "north_cruise_distance_m": 60.0,
+    "target_formation": "v_shape"
+  },
+  "metrics": {
+    "total_reconfig_time_s": 29.163182973861694,
+    "min_inter_uav_distance_m": 2.4367848896862165,
+    "avg_command_response_latency_s": 0.16472721099853516,
+    "total_invalid_displacement_m": 24.447268089390427,
+    "collision_rate_percent": 0.0
+  },
+  "per_command": [
+    {
+      "command": "north_cruise",
+      "response_latency_s": 0.16276001930236816,
+      "duration_s": 12.829319715499878,
+      "invalid_displacement_m": 1.0150337689958793,
+      "goal": {
+        "x": -9.004299188241637,
+        "y": 56.983794177551495
+      }
+    },
+    {
+      "command": "v_shape",
+      "response_latency_s": 0.16669440269470215,
+      "duration_s": 16.333191633224487,
+      "invalid_displacement_m": 23.43223432039455
+    }
+  ],
+  "collision_threshold_m": 1.0,
+  "samples": {
+    "collision_samples": 0,
+    "total_distance_samples": 10028
+  },
+  "mission_speed_set_result": {
+    "applied": true,
+    "detail": {
+      "control_rate_hz": 6.0,
+      "mission_step_xy_before": 0.8,
+      "mission_step_xy_after": 0.8333333333333334,
+      "target_speed_mps": 5.0
+    }
+  }
+}

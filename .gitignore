@@ -1,0 +1,24 @@
+# ROS/Gazebo generated artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+ros2_ws/.colcon/
+
+# Gazebo/ArduPilot runtime logs and binaries
+gz_ws/build/
+gz_ws/install/
+gz_ws/log/
+gz_ws/**/logs/
+gz_ws/**/*.tlog
+gz_ws/**/*.tlog.raw
+gz_ws/**/*.BIN
+
+# Generic heavy artifacts
+**/*.bag
+**/*.db3
+**/*.AppImage
+**/*.deb
+
+# Python cache
+**/__pycache__/
+**/*.pyc
