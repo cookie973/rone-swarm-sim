@@ -1,0 +1,5 @@
+[console_scripts]
+mavlink_bridge = uav_bridge.mavlink_bridge:main
+mavlink_dump = uav_bridge.mavlink_dump:main
+mavlink_tx = uav_bridge.mavlink_tx:main
+swarm_formation = uav_bridge.swarm_formation:main

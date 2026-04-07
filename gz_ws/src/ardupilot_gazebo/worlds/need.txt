@@ -1,0 +1,137 @@
+多机世界文件设计思维步骤书
+
+说明：
+本文件同样以 Ubuntu 终端操作为背景来解释 world 文件设计，不按 GUI 点选方式描述。
+默认你会在 Ubuntu bash 终端中检查文件、运行 Gazebo、查看日志。
+
+一、为什么不能只在 world 里复制 6 次同一个模型
+
+单机 world 复制成 6 份 `<include>` 看起来很简单，但真正的问题不在模型名字，而在 Gazebo 与 ArduPilot SITL 的 FDM 通信端口。
+
+如果 6 个模型都引用同一个 `iris_with_gimbal`，而模型内部 `ArduPilotPlugin` 的 `fdm_port_in` 都是同一个值，那么 Gazebo 发给 SITL 的飞控数据会互相冲突，多机仿真会失效。
+
+所以真正的正确步骤不是“复制 include”，而是：
+
+1. 复制模型副本。
+2. 给每个模型副本分配唯一 `fdm_port_in`。
+3. 再在 world 里引用这些不同的模型副本。
+
+
+二、为什么要做 `iris_gimbal_i0` 到 `iris_gimbal_i5`
+
+这是为了把“世界文件中的实例名”和“模型内部插件端口”分离开。
+
+世界文件负责：
+1. 放置模型位置。
+2. 命名成 `uav1` 到 `uav6`。
+
+模型副本负责：
+1. 内部 `ArduPilotPlugin` 使用不同的 `fdm_port_in`。
+
+这样端口映射关系清晰，排错也简单。
+
+
+三、为什么采用 2x3 阵列摆放
+
+世界文件里当前将 6 架无人机摆成 2 行 3 列，间距 3 米。
+
+原因：
+1. 初始位置不重叠，避免加载后碰撞。
+2. 初始视角下更容易观察。
+3. 编队算法调试时，可以明显看出队形收敛过程。
+
+
+四、为什么世界文件里只做“物理与摆位”，不做控制逻辑
+
+world 文件最重要的职责是：
+1. 场景。
+2. 模型。
+3. 物理系统。
+
+控制逻辑应该放在 ROS2 节点里，而不应该硬塞进 SDF。
+
+因为：
+1. 控制算法需要频繁改动。
+2. ROS2 节点更适合做状态订阅和控制发布。
+3. world 文件应该尽量稳定，避免每次改算法都动仿真场景。
+
+
+五、世界文件在整套系统中的位置
+
+这套系统可以理解成四层：
+
+第一层：Gazebo world
+负责把 6 架飞机和场景加载出来。
+
+第二层：ArduPilot SITL
+每架飞机一个飞控实例。
+
+第三层：ROS2 bridge
+把每架飞机的 MAVLink 状态和控制转换成 ROS2 话题。
+
+第四层：蜂群算法节点
+订阅多机状态，输出多机控制。
+
+因此，world 文件是地基，不是大脑。
+
+从 Ubuntu 终端角度理解，world 文件本身不会“自己运行”，它总是通过命令被加载，例如：
+
+1. 进入脚本目录
+	cd /home/cookie/gz_ws/src/ardupilot_gazebo/scripts
+
+2. 启动 Gazebo world
+	./start_gazebo.sh
+
+或者直接用命令行启动：
+	export GZ_SIM_RESOURCE_PATH=/home/cookie/gz_ws/src/ardupilot_gazebo/models:/home/cookie/gz_ws/src/ardupilot_gazebo/worlds:$GZ_SIM_RESOURCE_PATH
+	gz sim -v4 -r --render-engine ogre gazebo_6uav.sdf
+
+这里必须强调：
+1. 当前这套 6 机 world 约定强制使用 `ogre`。
+2. world 内部传感器系统的 `<render_engine>` 也已经改成 `ogre`。
+3. 不要再用 `ogre2` 启动这套 6 机实验，否则会和当前文档及脚本约定不一致。
+
+
+六、设计 world 文件时的真正检查顺序
+
+正确顺序应该是：
+
+1. 能否加载 6 架模型。
+2. 6 架模型是否名字唯一。
+3. 6 架模型内部 FDM 端口是否唯一。
+4. Gazebo 是否能稳定运行，不报插件错误。
+5. SITL 是否能逐架连上。
+
+这比单纯检查 XML 是否合法更重要。
+
+Ubuntu 终端里对应的检查动作一般是：
+
+1. 看 world 文件内容
+	sed -n '1,220p' /home/cookie/gz_ws/src/ardupilot_gazebo/worlds/gazebo_6uav.sdf
+
+2. 检查 XML 语法
+	xmllint --noout /home/cookie/gz_ws/src/ardupilot_gazebo/worlds/gazebo_6uav.sdf
+
+3. 启动 Gazebo 看是否能加载
+	cd /home/cookie/gz_ws/src/ardupilot_gazebo/scripts
+	./start_gazebo.sh
+
+4. 如果启动失败，看终端报错，而不是只看界面现象。
+
+
+七、后续如果扩展到更多无人机
+
+如果将来从 6 架扩到 10 架、20 架，方法不变：
+
+1. 继续复制更多模型副本。
+2. 继续按规律分配 `fdm_port_in`。
+3. 继续在 world 里用规律化布局生成实例。
+
+当数量进一步增大时，建议不再手工维护 world，而是用脚本自动生成 SDF。
+
+在 Ubuntu 终端工作流里，这通常意味着：
+
+1. 用脚本生成多个模型目录。
+2. 用脚本生成 world 文件。
+3. 用 `xmllint` 做语法检查。
+4. 再用 Gazebo 命令行启动验证。

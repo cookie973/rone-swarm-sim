@@ -1,0 +1,477 @@
+6 架无人机蜂群仿真实施说明
+
+说明：
+本文档对应当前工作区里的最新实现，目标是让 6-UAV Gazebo Harmonic + ArduPilot SITL + ROS2 + QGroundControl 蜂群链路在 Ubuntu 22.04 下稳定运行。
+
+当前版本已经完成以下核心能力：
+1. 一键后台启动与停止。
+2. 6 机批量起飞链路已经单独验证可用。
+3. QGroundControl 端口隔离与中继接入。
+4. 批量起飞策略增强，优先保证 6 机尽快同时离地。
+5. 统一的日志、排障与扩展说明。
+
+当前仍在继续处理的问题：
+1. 编队切换策略还不稳定，暂时不要把它当成可交付功能。
+2. 明天继续重点处理“队形要成形、切换时不能互相穿插”的执行策略。
+
+一、目录与关键文件
+
+1. Gazebo 世界文件
+   /home/cookie/gz_ws/src/ardupilot_gazebo/worlds/gazebo_6uav.sdf
+
+2. 启动脚本
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/swarm_start.sh
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/swarm_stop.sh
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/swarm_logs.sh
+
+3. 常用控制脚本
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/takeoff_all.sh
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/land_all.sh
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/formation_switch.sh
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/start_swarm_button_panel.sh
+   /home/cookie/gz_ws/src/ardupilot_gazebo/scripts/swarm_button_panel.py
+
+4. ROS2 蜂群控制节点
+   /home/cookie/ros2_ws/src/uav_bridge/uav_bridge/swarm_formation.py
+
+5. ROS2 QGC 中继节点
+   /home/cookie/ros2_ws/src/uav_bridge/uav_bridge/qgc_bridge.py
+
+6. ROS2 包入口
+   /home/cookie/ros2_ws/src/uav_bridge/setup.py
+
+二、当前系统结构
+
+当前整套仿真栈一共包含 5 层进程：
+1. Gazebo Harmonic 仿真器。
+2. 6 个 ArduPilot SITL 实例。
+  QGC 外部端口: 14544
+  QGC 内部中继端口: 14744
+
+uav6:
+  Gazebo FDM: 9052
+  SITL 实例号: 5
+  Bridge RX: 14506
+  Bridge TX: 14606
+  QGC 外部端口: 14545
+  QGC 内部中继端口: 14745
+
+说明：
+1. QGC 不再直接接到 SITL 输出，而是先接到 qgc_bridge 的外部端口 14540-14545。
+2. SITL 的 QGC 流量先发往内部中继端口 14740-14745，再由 qgc_bridge 转发给 QGC。
+3. 这样做的目的，是在不破坏 QGC 常规控制的情况下，让 ROS2 节点同时观察并处理蜂群级命令。
+
+四、推荐启动流程
+
+步骤 1：启动整套系统
+
+在终端执行：
+cd /home/cookie/gz_ws/src/ardupilot_gazebo/scripts
+./swarm_start.sh
+
+脚本默认顺序：
+1. 清理旧进程。
+2. 启动 Gazebo。
+3. 启动 6 个 SITL。
+4. 启动 6 个 bridge。
+5. 启动 qgc_bridge。
+6. 启动 swarm_formation。
+
+可选参数：
+./swarm_start.sh --no-controller
+
+说明：
+1. 这个参数会跳过 swarm_formation，只保留 Gazebo、SITL、bridge 和 qgc_bridge。
+2. 当你只想验证 QGC 单机链路时，这个参数比较有用。
+
+可选环境变量：
+GAZEBO_WAIT=12 ./swarm_start.sh
+SITL_WAIT=3 ./swarm_start.sh
+BRIDGE_WAIT=2 ./swarm_start.sh
+QGC_WAIT=2 ./swarm_start.sh
+CONTROLLER_WAIT=3 ./swarm_start.sh
+
+五、停止与日志
+
+停止全部进程：
+cd /home/cookie/gz_ws/src/ardupilot_gazebo/scripts
+./swarm_stop.sh
+
+说明：
+1. 脚本会先读取 logs/.swarm_pids。
+2. 按 controller -> qgc_bridge -> bridge -> sitl -> gazebo 的顺序优雅停止。
+3. 如果 3 秒内没有退出，会补发 SIGKILL。
+4. 最后还会做一次 pkill 残留清理。
+
+查看日志：
+./swarm_logs.sh
+./swarm_logs.sh gazebo
+./swarm_logs.sh sitl 1
+./swarm_logs.sh bridge 2
+./swarm_logs.sh qgc
+./swarm_logs.sh formation
+./swarm_logs.sh all
+./swarm_logs.sh -f qgc
+
+日志目录：
+/home/cookie/gz_ws/src/ardupilot_gazebo/logs/
+
+关键日志文件：
+gazebo.log
+uav1.log 到 uav6.log
+bridge_uav1.log 到 bridge_uav6.log
+qgc_bridge.log
+swarm_formation.log
+
+六、ROS2 话题结构
+
+每架无人机都放在独立命名空间里。
+
+以 uav1 为例，常用状态话题有：
+1. /uav1/uav/pose
+2. /uav1/uav/odom
+3. /uav1/uav/mode
+4. /uav1/uav/armed
+5. /uav1/uav/navsatfix
+
+常用控制话题有：
+1. /uav1/uav/cmd/arm
+2. /uav1/uav/cmd/mode
+3. /uav1/uav/cmd/takeoff
+4. /uav1/uav/cmd/land
+5. /uav1/uav/cmd/velocity
+6. /uav1/uav/cmd/waypoint
+
+蜂群级话题：
+1. /swarm/formation
+2. /swarm/mode
+
+七、编队控制器说明
+
+文件：
+/home/cookie/ros2_ws/src/uav_bridge/uav_bridge/swarm_formation.py
+
+当前版本说明：
+1. `swarm_formation.py` 仍在调试中，当前只能作为明天继续优化的代码基础。
+2. 今天已经验证稳定可用的是启动、停机、QGC 接入和 6 机批量起飞。
+3. 今天没有把“切换后队形清晰成形且全程不碰撞”做到满意，因此本文档不再把编队切换写成已完成项。
+4. 如果你今天只想稳定起飞并接 QGC，请使用 `./swarm_start.sh --no-controller`，不要启动 `swarm_formation`。
+
+支持模式：
+1. anchored
+2. leader_follower
+
+默认模式：
+leader_follower
+
+参考机规则：
+1. 固定使用 uav1 作为参考机。
+2. 默认不由 swarm_formation 主动控制 uav1。
+3. 其余无人机会围绕 uav1 的实时位置和速度维持队形。
+4. 这意味着 QGC 对 uav1 的人工控制、引导飞行、航点飞行，都可以直接带动整个编队跟随。
+
+支持队形：
+1. circle
+2. line
+3. v_shape
+4. grid
+
+常用切换命令：
+ros2 topic pub --once /swarm/formation std_msgs/msg/String "{data: 'circle'}"
+ros2 topic pub --once /swarm/formation std_msgs/msg/String "{data: 'line'}"
+ros2 topic pub --once /swarm/formation std_msgs/msg/String "{data: 'v_shape'}"
+ros2 topic pub --once /swarm/formation std_msgs/msg/String "{data: 'grid'}"
+
+ros2 topic pub --once /swarm/mode std_msgs/msg/String "{data: 'leader_follower'}"
+ros2 topic pub --once /swarm/mode std_msgs/msg/String "{data: 'anchored'}"
+
+今天的建议：
+1. 暂时不要在正式演示中使用上述队形切换命令。
+2. 明天重新设计切换策略后，再恢复这部分测试。
+
+八、起飞策略优化说明
+
+文件：
+/home/cookie/gz_ws/src/ardupilot_gazebo/scripts/takeoff_all.sh
+/home/cookie/gz_ws/src/ardupilot_gazebo/scripts/takeoff_all.py
+
+当前版本的起飞策略已经切换到“shell 封装 + ros2 CLI 逐机顺序起飞”作为默认路径，Python 协调器保留为可选回退路径。
+
+核心策略：
+1. takeoff_all.sh 负责准备 ROS 环境，并默认执行已验证通过的 CLI 起飞流程。
+2. 为避免与 `swarm_formation` 的速度控制冲突，`takeoff_all.sh` 默认会在起飞前暂停 `/swarm_formation`。
+3. 对每架无人机按状态闭环推进：先低油门 RC override 保持可解锁，再发 GUIDED 和 ARM，等待 armed=true。
+4. 解锁成功后切换到高油门 RC override，并持续补发 TAKEOFF 指令直到高度收敛。
+5. 成功判据是实际高度达到目标附近，而不是只看命令 ACK。
+6. 每架机起飞完成后立即释放 RC override，再推进下一架，避免多机互相污染油门状态。
+7. 如需回退旧的 Python 协调器，可设置 TAKEOFF_ENGINE=python。
+
+默认优化目标：
+1. 尽量让 6 架机在更短时间内进入同步起飞阶段。
+2. 尽量降低因个别飞机慢响应导致整队变慢的情况。
+3. 尽量降低“有的飞机掉锁后整队又停住”的情况。
+
+可调环境变量：
+1. NUM_UAV
+2. SUCCESS_ALTITUDE
+3. PER_UAV_TIMEOUT
+4. TAKEOFF_STREAM_DURATION
+5. RC_OVERRIDE_RATE
+6. RC_OVERRIDE_THROTTLE
+7. RC_OVERRIDE_IDLE_THROTTLE
+8. TAKEOFF_STOP_CONTROLLER（默认 1；设为 0 可跳过自动暂停编队控制器）
+9. TAKEOFF_ENGINE（默认 cli；设为 python 可回退旧协调器）
+
+示例：
+PER_UAV_TIMEOUT=30 RC_OVERRIDE_THROTTLE=1620 ./takeoff_all.sh 6.0
+
+推荐用法：
+1. 正常实验直接执行：
+   ./takeoff_all.sh
+2. 指定高度执行：
+   ./takeoff_all.sh 8.0
+3. 如果你发现个别机器解锁偏慢，可以适当增大 PER_UAV_TIMEOUT。
+4. 如果你需要兼容旧逻辑，可以显式使用 TAKEOFF_ENGINE=python ./takeoff_all.sh。
+
+九、QGroundControl 集成方式
+
+QGC 接入端口：
+1. uav1 -> UDP 14540
+2. uav2 -> UDP 14541
+3. uav3 -> UDP 14542
+4. uav4 -> UDP 14543
+5. uav5 -> UDP 14544
+6. uav6 -> UDP 14545
+
+推荐用法：
+1. 在 QGC 中分别添加 6 个 UDP 连接。
+2. 目标地址使用 127.0.0.1。
+3. 端口使用 14540 到 14545。
+4. 每个连接会对应一架无人机，SYSID 由 SITL 的 --auto-sysid 自动隔离。
+
+QGC 详细配置步骤：
+1. 先启动仿真栈。
+   推荐今天使用：
+   `cd /home/cookie/gz_ws/src/ardupilot_gazebo/scripts`
+   `./swarm_start.sh --no-controller`
+2. 等待 Gazebo、6 个 SITL、6 个 bridge、1 个 `qgc_bridge` 全部起来。
+3. 打开 QGroundControl。
+4. 进入 QGC 顶部菜单 `Application Settings`。
+5. 打开 `Comm Links`。
+6. 点击 `Add` 新建链路。
+7. 类型选择 `UDP`。
+8. 名称建议依次填写：`uav1`、`uav2`、`uav3`、`uav4`、`uav5`、`uav6`。
+9. 每个链路都按下面方式填写：
+   `Host Address`: `127.0.0.1`
+   `Port`: 对应本机 UDP 端口
+   `Auto Connect`: 打开
+10. 六个连接建议按下表配置：
+
+   `uav1 -> 127.0.0.1:14540`
+   `uav2 -> 127.0.0.1:14541`
+   `uav3 -> 127.0.0.1:14542`
+   `uav4 -> 127.0.0.1:14543`
+   `uav5 -> 127.0.0.1:14544`
+   `uav6 -> 127.0.0.1:14545`
+
+11. 保存后返回主界面，等待心跳出现。
+12. 如果只看到 1 架机，先不要改仿真，先检查 `Comm Links` 里是否真的保存了 6 条 UDP 链路。
+13. 如果 6 条都在但仍未全部显示，执行一次：
+   `./swarm_logs.sh qgc`
+   观察是否出现 `QGC 客户端已连接` 的日志。
+14. QGC 中每架机应有独立 SYSID：
+   `uav1=1`、`uav2=2`、`uav3=3`、`uav4=4`、`uav5=5`、`uav6=6`
+15. QGC 里不要直接连接 `14740-14745`，这些是内部中继端口，只给 `qgc_bridge` 使用。
+16. QGC 里也不要再额外连接 `14501-14506` 或 `14601-14606`，否则容易和现有链路打架。
+
+QGC 连接成功后的建议检查：
+1. 先确认 QGC Vehicle Setup 里能切到 6 架不同飞机。
+2. 先单独看每架机的姿态、GPS、模式和电池页面是否刷新。
+3. 今天只建议做单机模式切换、单机任务查看、单机状态监控。
+4. 如果要做全队起飞，优先使用脚本 `./takeoff_all.sh 5.0`，不要先依赖 QGC 广播命令。
+
+当前 QGC 集成分成两类能力。
+
+第一类：单机直控
+1. QGC 对任意单架无人机的常规操作，会通过 qgc_bridge 原样转发到对应 SITL。
+2. 包括常规的模式切换、起飞、降落、航点飞行和遥控指令。
+3. 只有在你显式启动 `swarm_formation` 且其工作正常时，leader_follower 才会带动其余飞机跟随。
+
+第二类：蜂群级命令
+1. `qgc_bridge` 支持把一部分 MAVLink 命令翻译成 ROS2 蜂群命令。
+2. 这类命令适合从 QGC 的高级命令面板、自定义命令入口或原始 MAVLink 命令工具发送。
+3. 但今天不建议把它作为编队演示入口，因为编队切换策略仍在重写中。
+
+自定义蜂群命令约定：
+1. MAV_CMD_USER_1
+   用途：切换编队
+   param1:
+   0 -> circle
+   1 -> line
+   2 -> v_shape
+   3 -> grid
+
+2. MAV_CMD_USER_2
+   用途：切换蜂群模式
+   param1:
+   0 -> anchored
+   1 -> leader_follower
+
+3. MAV_CMD_USER_3
+   用途：批量 arm/disarm
+   param1:
+   0 -> disarm all
+   1 -> arm all
+
+4. MAV_CMD_USER_4
+   用途：批量起飞/降落
+   param1:
+   0 -> land all
+   1 -> takeoff all
+   param2:
+   起飞高度，单位米
+
+广播命令支持：
+1. 如果 COMMAND_LONG 的 target_system 为 0 或 255，qgc_bridge 会把以下命令视为全体广播：
+   MAV_CMD_COMPONENT_ARM_DISARM
+   MAV_CMD_NAV_TAKEOFF
+   MAV_CMD_NAV_LAND
+2. 如果 SET_MODE 的 target_system 为 0 或 255，qgc_bridge 会把该模式同步发布到所有无人机。
+
+十、今天推荐操作顺序
+
+1. 启动系统
+   ./swarm_start.sh --no-controller
+
+2. 检查日志
+   ./swarm_logs.sh qgc
+   ./swarm_logs.sh sitl 1
+
+3. 批量起飞
+   ./takeoff_all.sh
+
+4. 打开 QGC，连接 14540-14545
+
+5. 在 QGC 中检查 6 架机状态是否都在线
+
+6. 如需单机操作，可只操作其中 1 架机
+
+7. 结束时统一停止
+   ./swarm_stop.sh
+
+十点五、按钮化方案（QGC + 一键面板）
+
+目标：
+1. 在 QGC 里给 `uav1` 点目标点。
+2. 在本地按钮面板里一键切 `leader_follower` 和 `v_shape`。
+3. 让“前往目标点”和“切队形”分工清晰，操作更像地面站按钮工作流。
+
+启动按钮面板：
+1. 先确保仿真栈已启动并且 ROS 话题在线。
+2. 运行：
+   `cd /home/cookie/gz_ws/src/ardupilot_gazebo/scripts`
+   `./start_swarm_button_panel.sh`
+
+面板按钮说明：
+1. `Takeoff All`：固定调用 `TAKEOFF_ENGINE=cli TAKEOFF_RC_OVERRIDE=1 ./takeoff_all.sh`，按输入高度批量起飞。
+2. `Land All`：调用 `land_all.sh`，批量降落。
+3. `Arm All` / `Disarm All`：批量解锁/上锁。
+4. `leader_follower` / `anchored`：切换编队控制模式。
+5. `V-Shape / Line / Circle / Grid`：切换队形。
+6. `Go V (leader_follower + v_shape)`：一键切到跟随 V 队形。
+
+和 QGC 的配合方式：
+1. 在 QGC 中选择 `uav1` 并下发 Guided 目标点或任务航点。
+2. 在按钮面板点击 `Go V (leader_follower + v_shape)`。
+3. 如果需要改成其他形状，点击对应队形按钮即可。
+4. 建议先小速度、缓转弯验证，再逐步增加机动强度。
+
+明天继续项：
+1. 重写编队切换执行策略，目标是“先看得出形状，再保证切换不穿插”。
+2. 重新验证 `anchored` 和 `leader_follower` 两种模式下的实际成形效果。
+3. 编队稳定后，再回头把 QGC 的蜂群命令链路完整打通。
+
+十一、故障排查
+
+问题 1：swarm_start.sh 启动失败
+排查：
+1. 先看 gazebo.log。
+2. 再看 uav1.log。
+3. 检查 /opt/ros/humble/setup.bash 是否存在。
+4. 检查 $HOME/ardupilot/Tools/autotest/sim_vehicle.py 是否存在。
+
+问题 2：QGC 连不上无人机
+排查：
+1. 查看 qgc_bridge.log。
+2. 确认 swarm_start.sh 已经启动 qgc_bridge。
+3. 确认 QGC 连接的端口是 14540-14545，而不是 14740-14745。
+4. 确认本机没有旧的 QGC 或其他 GCS 占用这些端口。
+5. 确认 `swarm_start.sh` 使用的是当前版本，里面的 SITL 启动参数包含 `--mavproxy-args="--non-interactive --streamrate=20"`。
+
+问题 3：批量起飞仍然不整齐
+排查：
+1. 查看各自 uavN.log 中是否已经拿到 heartbeat。
+2. 查看 bridge_uavN.log 中是否已经收到 mode 和 armed 状态。
+3. 查看脚本汇总里失败的是 GUIDED、ARM 还是 TAKEOFF 阶段。
+4. 确认 EKF/GPS 已经就绪。
+5. 对偏慢机器可单独查看：
+   ./swarm_logs.sh sitl N
+   ./swarm_logs.sh bridge N
+
+问题 4：编队切换还是乱、看不出形状
+说明：
+1. 这是当前尚未解决的问题。
+2. 今天先不要继续把它当成可用功能。
+3. 明天从“重新设计切换执行策略”开始处理，而不是继续小幅调参。
+
+问题 5：QGC 只能看到部分飞机
+排查：
+1. 先检查 QGC `Comm Links` 里是否确实有 6 条 UDP 链路。
+2. 再看 `./swarm_logs.sh qgc` 是否打印了每个 `uavN QGC 客户端已连接`。
+3. 如果只有部分端口被连接，删除 QGC 旧链路后重新按 14540-14545 添加。
+4. 确认没有把内部端口 14740-14745 配进 QGC。
+
+问题 6：旧进程干扰新启动
+处理：
+1. 先执行 ./swarm_stop.sh。
+2. 如果仍有残留，再手工执行：
+   pkill -9 -f 'gz sim'
+   pkill -9 -f arducopter
+   pkill -9 -f mavproxy
+   pkill -9 -f mavlink_tx
+   pkill -9 -f qgc_bridge
+
+十二、可调参数建议
+
+swarm_formation 常用参数：
+1. formation_spacing
+2. formation_radius
+3. position_gain
+4. velocity_gain
+5. max_speed
+6. max_accel
+7. min_separation
+8. safety_pause_distance
+9. safety_resume_distance
+10. transition_duration
+
+起飞脚本常用参数：
+1. TAKEOFF_ROUNDS
+2. TAKEOFF_SLEEP
+3. READY_ROUNDS
+4. TAKEOFF_SUCCESS_MIN_ALT
+
+十三、当前结论
+
+当前版本已经具备以下实际可用能力：
+1. 一条命令拉起 6-UAV 仿真全栈。
+2. 一条命令完整停止并清理残留进程。
+3. 每架无人机和每个关键组件都有独立日志。
+4. QGC 可以通过 14540-14545 分别连接 6 架无人机。
+5. `swarm_start.sh` 已修复后台启动时 MAVProxy 退出导致 SITL 被杀掉的问题。
+6. `takeoff_all.sh` 默认使用两阶段 RC override 的逐机 CLI 起飞路径，并已在干净基线上实测 6 机稳定起飞到约 5m。
+
+当前没有闭环确认完成的能力：
+1. 编队切换后的最终形状稳定性。
+2. 编队切换过程中的无碰撞保证。
+3. QGC 侧直接触发蜂群编队命令后的稳定演示效果。
